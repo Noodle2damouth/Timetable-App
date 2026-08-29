@@ -58,5 +58,8 @@
 - **Security**: never paste your real `GEMINI_API_KEY` into a chat, commit,
   or group message. Keep it only in your local environment variable or an
   untracked `.env` file (see `.gitignore`). If a key is ever exposed,
+<<<<<<< HEAD
+  regenerate it immediately at https://aistudio.google.com/apikey
+=======
   regenerate it immediately at https://aistudio.google.com/apikey
 
