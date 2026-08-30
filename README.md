@@ -1,16 +1,25 @@
-# AI Timetable Planner — Weeks 1-2 (confirmed working)
+# AI Timetable Planner — Project complete (Weeks 1-3)
 
 ## What's in this folder
-- `database.py` — SQLite storage: timetable events, assignments, exams, and
-  a persistent color-per-subject table. Tested and working.
+- `database.py` — SQLite storage: timetable events, assignments, exams,
+  student profile, syllabus chapters, and a persistent color-per-subject
+  table.
 - `ai_chat.py` — Gemini function-calling chat brain (model: `gemini-3.6-flash`).
-  Turns messages like "I have English on Wednesday at 12:30" into real
-  database actions. Handles multi-step requests (e.g. "delete my Chemistry
-  class" — it looks the class up, then deletes it).
-- `app.py` — Streamlit app: chat window, Google-Calendar-style weekly view,
-  and a Kanban board, with rounded corners and modern styling.
+  Turns natural language into real actions: add/edit/delete timetable
+  events, track assignments and exams, and generate chapter mindmaps.
+- `syllabus_parser.py` — splits an uploaded syllabus (PDF or pasted text)
+  into individual chapters automatically, using "Chapter N" / "Unit N"
+  style headings.
+- `app.py` — Streamlit app: onboarding flow, one-time tutorial, timetable
+  (Google-Calendar-style), Kanban board, and a floating chat bubble
+  visible from every screen.
 - `requirements.txt` — Python packages needed.
+- `.streamlit/config.toml` — sets the blue accent color for both light
+  and dark mode.
 - `.gitignore` — keeps your API key and personal timetable data out of GitHub.
+- `CODE_EXPLAINED.md` — a plain-English, section-by-section walkthrough of
+  every file, written for the team to actually understand the code (not
+  just run it).
 
 ## Setup
 1. Install Python 3.10+
@@ -22,24 +31,30 @@
 5. Run the app: `streamlit run app.py`
 
 ## What works right now (confirmed by testing)
-- Add a class via chat ("I have Math on Friday at 10am")
-- Edit a class via chat, with context awareness ("actually make it 11am")
-- Delete a class via chat ("remove my Chemistry class on Tuesday")
-- View everything on a Google Calendar-style weekly grid, with rounded
-  corners and a distinct, consistent color per subject
-- Ask what's due, and the AI lists unfinished assignments
-- Report progress on an assignment ("mark English 75% done") — AI updates
-  it and nudges toward the next task
-- Add and track exams, ask "when are my exams" for the soonest ones first
-- Kanban board tab: drag assignment cards between Not started / In
-  progress / Done, which updates their progress in the database
+- **Onboarding flow**: first launch asks for your name and grade, then
+  lets you upload a syllabus (PDF or pasted text) per subject — chapters
+  are split out automatically, no manual typing.
+- **One-time tutorial** screen after onboarding, never shown again.
+- **Chat** (floating bubble, bottom-right, visible on every screen):
+  - Add a class ("I have Math on Friday at 10am")
+  - Edit a class with context awareness ("actually make it 11am")
+  - Delete a class ("remove my Chemistry class on Tuesday")
+  - Ask what's due, report progress ("mark English 75% done")
+  - Add and check exam dates
+  - Generate a mindmap for any uploaded chapter ("mindmap Chapter 3 of
+    Geography") — shown as a colored branching outline card in the chat
+- **Timetable**: Google-Calendar-style weekly view, DD/MM/YYYY dates,
+  distinct persistent color per subject, rounded modern styling
+- **Kanban board**: drag assignment cards between To Do / In Progress /
+  Done, live counts, add tasks directly
+- Inter font for body text, Instrument Serif for headings throughout
+- Light/dark mode toggle (blue accent in both)
 
-## What's next (Week 3)
-- Onboarding form (grade + syllabus)
-- Mindmap generation for a syllabus chapter
-- PDF upload → quiz → auto-grading
-- See `PROJECT_BRIEF_FOR_CLAUDE.md` for the full roadmap and how to hand this
-  off to a teammate or another Claude session.
+## What was deliberately NOT built
+- **PDF upload → quiz → auto-grading** (originally planned for Week 3/4)
+  was dropped as too complex for the project's scope and timeline. The
+  syllabus upload + mindmap features cover the "AI understands my
+  syllabus" part of the brief without needing this.
 
 ## Notes for the team
 - **Model name**: Google retires Gemini models fairly often. We're on
@@ -50,16 +65,18 @@
   for new projects, but `generateContent` (what this project uses) remains
   fully supported and is Google's own recommended path for stable
   deployments. We're deliberately staying on `generateContent` — migrating
-  would mean restructuring the whole request/response format for no real
-  benefit at our scale. Don't switch mid-project.
+  would add real restructuring work for no benefit at our project's scale.
+  Don't switch mid-project.
 - **"No API key" errors are usually not a code bug** — they almost always
   mean `GEMINI_API_KEY` wasn't set in that terminal session before running
   the app. Set it again and restart the terminal if this happens.
+- **Kanban dark mode** follows your operating system's dark mode setting,
+  not Streamlit's own toggle — the Kanban board renders in an isolated
+  iframe that can't see Streamlit's theme state, which is a real
+  limitation of the library, not a bug we can fully close.
+- **New to the codebase?** Read `CODE_EXPLAINED.md` first — it walks
+  through every file in plain language.
 - **Security**: never paste your real `GEMINI_API_KEY` into a chat, commit,
   or group message. Keep it only in your local environment variable or an
   untracked `.env` file (see `.gitignore`). If a key is ever exposed,
-<<<<<<< HEAD
   regenerate it immediately at https://aistudio.google.com/apikey
-=======
-  regenerate it immediately at https://aistudio.google.com/apikey
-

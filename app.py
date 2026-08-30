@@ -9,6 +9,7 @@ Run with: streamlit run app.py
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_calendar import calendar
 from streamlit_sortables import sort_items
 from datetime import datetime
@@ -21,13 +22,15 @@ st.set_page_config(page_title="AI Timetable Planner", layout="wide")
 db.init_db()
 
 # ---------------- Custom styling (rounded corners, theme-aware) ----------------
+# NOTE: Streamlit's real theme variables are prefixed --st- (e.g. --st-background-color).
+# Using the un-prefixed names silently resolves to nothing (transparent) — that was the bug.
 st.markdown("""
 <style>
     [data-testid="stChatMessage"] {
         border-radius: 16px;
         padding: 4px 10px;
         margin-bottom: 6px;
-        background-color: var(--secondary-background-color);
+        background-color: var(--st-secondary-background-color);
         box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
     [data-testid="stChatInput"] textarea { border-radius: 20px !important; }
@@ -36,7 +39,7 @@ st.markdown("""
         border-radius: 16px;
         overflow: hidden;
         box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-        background-color: var(--secondary-background-color);
+        background-color: var(--st-secondary-background-color);
         padding: 8px;
     }
     .fc-event {
@@ -49,8 +52,8 @@ st.markdown("""
     .fc-daygrid-day, .fc-timegrid-slot { border-radius: 4px; }
     div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px; }
 
-    /* Leave room at the bottom so content doesn't hide behind the chat bar */
-    .block-container { padding-bottom: 100px !important; }
+    /* Leave room at the bottom-right so content doesn't hide behind the chat bar */
+    .block-container { padding-bottom: 90px !important; }
 
     /* Floating chat toggle button (shown when chat is closed) */
     .st-key-chat_toggle_btn button {
@@ -61,22 +64,27 @@ st.markdown("""
         height: 56px;
         border-radius: 50% !important;
         font-size: 1.3em;
-        z-index: 9999;
+        z-index: 999999 !important;
         box-shadow: 0 2px 10px rgba(0,0,0,0.25);
     }
 
-    /* Persistent chat panel, pinned to the bottom, visible across all tabs */
+    /* Chat panel — anchored bottom-RIGHT with a bounded width, not full-width.
+       This is what stops it from overlapping/clipping under the sidebar. */
     .st-key-chat_panel {
         position: fixed !important;
         bottom: 0;
-        left: 0;
-        width: 100%;
-        z-index: 9998;
-        background-color: var(--background-color);
-        box-shadow: 0 -4px 16px rgba(0,0,0,0.18);
-        padding: 10px 20px 16px 20px;
-        border-top-left-radius: 20px;
-        border-top-right-radius: 20px;
+        right: 20px;
+        left: auto;
+        width: min(420px, 92vw);
+        max-height: 70vh;
+        overflow-y: auto;
+        z-index: 999998 !important;
+        background-color: var(--st-background-color);
+        border: 1px solid var(--st-secondary-background-color);
+        box-shadow: 0 -4px 16px rgba(0,0,0,0.22);
+        padding: 10px 16px 16px 16px;
+        border-top-left-radius: 18px;
+        border-top-right-radius: 18px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -252,6 +260,86 @@ def render_persistent_chat():
 
 
 # ==================== SCREEN 3: Main app ====================
+def render_hover_sidebar_script():
+    """
+    EXPERIMENTAL: makes the sidebar peek open when your mouse gets near the
+    left edge, and close again when you move away.
+
+    This is NOT an official Streamlit feature — there's no supported way to
+    do this, so this reaches into the parent page from a components.html
+    iframe (which Streamlit allows for same-origin pages) and clicks
+    Streamlit's own expand/collapse button on your behalf. Because it
+    depends on Streamlit's internal DOM structure (specific data-testid
+    attributes), it CAN break if a future Streamlit update changes that
+    structure — if the hover stops working after an update, this is the
+    first place to check.
+    """
+    components.html("""
+    <script>
+    (function() {
+        const parentDoc = window.parent.document;
+
+        function setup() {
+            const sidebar = parentDoc.querySelector('[data-testid="stSidebar"]');
+            if (!sidebar) { setTimeout(setup, 400); return; }
+
+            if (parentDoc.getElementById('hover-edge-zone')) return; // already set up
+
+            const edgeZone = parentDoc.createElement('div');
+            edgeZone.id = 'hover-edge-zone';
+            edgeZone.style.position = 'fixed';
+            edgeZone.style.left = '0';
+            edgeZone.style.top = '0';
+            edgeZone.style.width = '10px';
+            edgeZone.style.height = '100vh';
+            edgeZone.style.zIndex = '999997';
+            parentDoc.body.appendChild(edgeZone);
+
+            let closeTimer = null;
+
+            function findToggleButton() {
+                // Streamlit's collapse/expand control changes data-testid
+                // depending on version; try a couple of known patterns.
+                return parentDoc.querySelector(
+                    '[data-testid="stSidebarCollapsedControl"] button'
+                ) || parentDoc.querySelector(
+                    '[data-testid="collapsedControl"] button'
+                );
+            }
+
+            function expand() {
+                clearTimeout(closeTimer);
+                if (sidebar.getAttribute('aria-expanded') === 'false') {
+                    const btn = findToggleButton();
+                    if (btn) btn.click();
+                }
+            }
+
+            function scheduleCollapse() {
+                clearTimeout(closeTimer);
+                closeTimer = setTimeout(function() {
+                    if (!sidebar.matches(':hover') && !edgeZone.matches(':hover')) {
+                        const collapseBtn = sidebar.querySelector('button[kind="header"]')
+                            || sidebar.querySelector('button');
+                        if (sidebar.getAttribute('aria-expanded') === 'true' && collapseBtn) {
+                            collapseBtn.click();
+                        }
+                    }
+                }, 350);
+            }
+
+            edgeZone.addEventListener('mouseenter', expand);
+            edgeZone.addEventListener('mouseleave', scheduleCollapse);
+            sidebar.addEventListener('mouseleave', scheduleCollapse);
+            sidebar.addEventListener('mouseenter', function() { clearTimeout(closeTimer); });
+        }
+
+        setup();
+    })();
+    </script>
+    """, height=0)
+
+
 def render_main_app():
     with st.sidebar:
         profile = db.get_student_profile()
@@ -260,6 +348,8 @@ def render_main_app():
         if st.button("⚙️ Edit profile / add syllabus"):
             st.session_state.force_onboarding = True
             st.rerun()
+
+    render_hover_sidebar_script()
 
     st.title("AI Timetable Planner")
 
@@ -317,27 +407,37 @@ def _format_date_display(iso_date: str) -> str:
 
 
 KANBAN_CARD_STYLE = """
+/* This board renders inside an isolated iframe, which CANNOT see
+   Streamlit's theme variables at all (that's a hard cross-iframe
+   limitation, not a naming mistake). So these are real hardcoded colors,
+   with a prefers-color-scheme fallback for OS-level dark mode.
+   Note: this won't perfectly sync with Streamlit's own light/dark toggle
+   specifically (that state isn't exposed to the iframe) — it follows your
+   operating system's dark mode setting instead, which matches for most
+   people most of the time. */
 .sortable-component {
     background: transparent !important;
 }
 .sortable-container {
-    background: var(--secondary-background-color) !important;
+    background: #f1f3f4 !important;
     border-radius: 16px !important;
     padding: 14px !important;
     box-shadow: 0 1px 4px rgba(0,0,0,0.12) !important;
 }
 .sortable-container-header {
+    color: #202124 !important;
     font-weight: 700 !important;
     font-size: 0.85em !important;
     letter-spacing: 0.04em !important;
     text-transform: uppercase !important;
     padding-bottom: 10px !important;
     margin-bottom: 10px !important;
-    border-bottom: 3px solid var(--primary-color) !important;
+    border-bottom: 3px solid #4285F4 !important;
 }
 .sortable-item {
-    background: var(--background-color) !important;
-    border-left: 4px solid var(--primary-color) !important;
+    background: #ffffff !important;
+    color: #202124 !important;
+    border-left: 4px solid #4285F4 !important;
     border-radius: 10px !important;
     padding: 12px 14px !important;
     margin-bottom: 10px !important;
@@ -346,13 +446,21 @@ KANBAN_CARD_STYLE = """
     line-height: 1.4 !important;
     font-size: 0.92em !important;
 }
+
+@media (prefers-color-scheme: dark) {
+    .sortable-container { background: #2d2f31 !important; }
+    .sortable-container-header { color: #e8eaed !important; }
+    .sortable-item {
+        background: #3c4043 !important;
+        color: #e8eaed !important;
+    }
+}
 """
 
 
 def render_kanban_tab():
     st.subheader("Assignments board")
-    st.caption("Drag cards between columns to update progress. "
-               "'Not started' = 0%, 'In progress' = 50%, 'Done' = 100%.")
+    st.caption("Drag cards between columns to update progress.")
 
     assignments = db.find_assignments(include_completed=True)
 
@@ -366,25 +474,34 @@ def render_kanban_tab():
     done = [_label(a) for a in assignments if a["progress"] == 100]
     label_to_id = {_label(a): a["id"] for a in assignments}
 
+    # Live counts, rendered on the OUTER page (not inside the sortable
+    # component's iframe) so they always reflect the true current database
+    # state and can use real theme-aware styling.
+    st.markdown(
+        f"📝 **{len(not_started)}** to do &nbsp;·&nbsp; "
+        f"🔨 **{len(in_progress)}** in progress &nbsp;·&nbsp; "
+        f"✅ **{len(done)}** done"
+    )
+
+    # Headers are intentionally STATIC (no counts embedded here) — the
+    # component only reports back what we gave it, so if the header text
+    # changes between reruns, matching the drag result to a column can
+    # silently fail. Keeping these fixed is what makes moves reliable.
     board = [
-        {"header": f"TO DO ({len(not_started)})", "items": not_started},
-        {"header": f"IN PROGRESS ({len(in_progress)})", "items": in_progress},
-        {"header": f"DONE ({len(done)})", "items": done},
+        {"header": "TO DO", "items": not_started},
+        {"header": "IN PROGRESS", "items": in_progress},
+        {"header": "DONE", "items": done},
     ]
     new_board = sort_items(
         board, multi_containers=True, direction="vertical",
         custom_style=KANBAN_CARD_STYLE, key="kanban_board",
     )
 
-    # Map the (possibly re-numbered) headers back to plain column names
-    header_to_column = {
-        f"TO DO ({len(not_started)})": "Not started",
-        f"IN PROGRESS ({len(in_progress)})": "In progress",
-        f"DONE ({len(done)})": "Done",
-    }
+    header_to_column = {"TO DO": "Not started", "IN PROGRESS": "In progress", "DONE": "Done"}
     column_progress = {"Not started": 0, "In progress": 50, "Done": 100}
 
     if new_board:
+        changed = False
         for column in new_board:
             column_name = header_to_column.get(column["header"])
             if column_name is None:
@@ -397,6 +514,9 @@ def render_kanban_tab():
                 current = next((a for a in assignments if a["id"] == assignment_id), None)
                 if current and current["progress"] != new_progress:
                     db.update_assignment_progress(assignment_id, new_progress)
+                    changed = True
+        if changed:
+            st.rerun()  # forces the counts line + board to reflect the new state immediately
 
     with st.expander("Add a new task"):
         with st.form("add_task_form", clear_on_submit=True):

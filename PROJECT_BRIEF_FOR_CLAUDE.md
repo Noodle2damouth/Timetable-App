@@ -1,108 +1,124 @@
 # Project brief: AI Timetable Planner (paste this to Claude to continue the project)
 
 Copy everything below this line into a new Claude conversation, and upload
-the current project files (database.py, ai_chat.py, app.py, requirements.txt)
-along with it.
+the current project files along with it.
 
 ---
 
 I'm working on a group school assignment (10th grade level) building an AI
 timetable planner in **Python only**. Please act as my coding assistant to
-continue building it. Here's the full context:
+continue building/maintaining it. Here's the full context:
 
 ## Core concept
-A chatbot window (the main feature) that manages a student's timetable and
-schoolwork through natural conversation, with contextual awareness (it
-remembers what was just discussed). A secondary Kanban board page lets
-students drag and drop tasks without AI.
+A chatbot (floating chat bubble, visible on every screen) that manages a
+student's timetable and schoolwork through natural conversation, with
+contextual awareness. A Kanban board offers a non-AI, drag-and-drop
+alternative for the same assignment data.
 
-## Tech stack (please stick to this — it's what the rest of the team is using)
+## Tech stack (please stick to this)
 - **Python 3.10+**
-- **Streamlit** for the GUI (chat window + calendar view + Kanban page)
+- **Streamlit** for the GUI
 - **Google Gemini API** (`google-genai` package), model `gemini-3.6-flash`,
-  with **function calling** — this is how the chatbot turns natural
-  language into real actions. Do NOT try to build custom NLU/intent
-  parsing from scratch; use Gemini's tool-use feature instead, it's
-  simpler and more reliable. Note: Google retires Gemini models
-  periodically — if `gemini-3.6-flash` stops working, check
-  https://ai.google.dev/gemini-api/docs/changelog for the current name.
-  Google is also pushing a newer "Interactions API" for new projects, but
-  we're deliberately staying on `generateContent` (what's used here) since
-  Google still calls it fully supported and the recommended path for
-  stable deployments — migrating would add real restructuring work for no
-  benefit at our project's scale. Don't switch mid-project.
+  with **function calling**. Do NOT build custom NLU from scratch. Note:
+  Google retires Gemini models periodically — check
+  https://ai.google.dev/gemini-api/docs/changelog if `gemini-3.6-flash`
+  stops working. We're deliberately staying on `generateContent` rather
+  than Google's newer "Interactions API" — both are supported, but
+  migrating adds real work for no benefit at this project's scale.
 - **SQLite** (`sqlite3`, built into Python) for all data storage
-- **pdfplumber** for reading uploaded PDF chapters (planned, Week 3)
 - **streamlit-calendar** for the Google-Calendar-style timetable view
-- **streamlit-sortables** for the Kanban board (built, Week 2)
+- **streamlit-sortables** for the Kanban board
+- **pdfplumber** for reading uploaded syllabus PDFs (syllabus upload only
+  — see "deliberately not built" below)
 
-## The 5 target behaviors (from the original assignment spec)
-1. **Add/edit/delete timetable events via chat**, with contextual awareness:
-   > User: "I have English Class on Wednesday, 12:30 PM"
-   > AI: "Sure! Let me add that to your timetable!"
-   > User: "Actually, change it to 1:00 PM"
-   > AI: "Moved it to 1:00 PM!"
-2. **Assignment tracking**: user asks what's due, AI lists it; user reports
-   progress (e.g. "mark English Notebook Work 75% done"), AI acknowledges
-   and nudges toward the next task.
-3. **Exam dates + AI-generated mindmaps**: AI knows upcoming exam dates, and
-   can generate a mindmap for a specific syllabus chapter based on the
-   student's grade/syllabus (collected at onboarding).
-4. **PDF upload → quiz → auto-grading**: student uploads a chapter PDF, asks
-   to be quizzed, AI asks questions and scores the result (e.g. 90/100).
-5. **Kanban board** (non-AI): drag-and-drop task management page.
+## The behaviors this app actually supports (final scope)
+1. **Add/edit/delete timetable events via chat**, with contextual awareness.
+2. **Assignment tracking**: what's due, progress updates with nudges
+   toward the next task.
+3. **Exam dates + AI-generated mindmaps**: exam lookup, and mindmap
+   generation for any uploaded syllabus chapter, rendered as a colored
+   branching outline card (not a Graphviz node-diagram — that needs a
+   system-level Graphviz install, which we deliberately avoided).
+4. **Kanban board** (non-AI): drag-and-drop task management, with live
+   counts and a manual add-task form.
 
-## Current status (Weeks 1-2 of 4 — COMPLETE and confirmed working end-to-end)
-Files already built, tested, AND confirmed working against a live API key:
-- `database.py` — SQLite schema + CRUD for `timetable_events` (core
-  feature), `assignments` (title, subject, due_date, progress 0-100), and
-  `exams` (subject, exam_date, notes). Also has a `subject_colors` table
-  that permanently assigns each subject a distinct, consistent color from
-  a 10-color palette (no more duplicate/dull colors).
-- `ai_chat.py` — Gemini function-calling loop (model `gemini-3.6-flash`)
-  with 10 tools: `add_event`, `find_events`, `update_event`,
-  `delete_event`, `add_assignment`, `find_assignments`, `get_due_now`,
-  `update_assignment_progress`, `add_exam`, `get_upcoming_exams`. The chat
-  loop runs in a `MAX_STEPS`-bounded cycle so it can chain multi-step
-  requests correctly — e.g. "delete my Chemistry class" requires
-  find_events THEN delete_event, and a single-round version of this used
-  to silently fail with "None" replies. Fixed and confirmed working.
-- `app.py` — Streamlit app with three parts: a chat column, a
-  Google-Calendar-style weekly view (`streamlit_calendar`, styled with
-  rounded corners via custom CSS), and a Kanban board tab
-  (`streamlit_sortables`) that drags assignments between Not
-  started/In progress/Done and syncs progress back to the database.
-  Custom CSS throughout for a more modern look (rounded chat bubbles,
-  rounded buttons, soft shadows).
-- `.gitignore` — excludes `.env`, `timetable.db`, `__pycache__/` from
-  version control so API keys and personal data don't get committed.
-- Project is now on GitHub via GitHub Desktop (no command line used).
+## Deliberately NOT built
+- **PDF upload → quiz → auto-grading** was scoped out entirely — it was
+  judged too complex for the project's timeline relative to its value.
+  Don't add this back in without discussing scope first.
 
-## What's next (Weeks 3-4 — NOT yet built)
-- **Week 3**: Onboarding form (grade + syllabus text/file, stored in a new
-  `students` or `syllabus` table). A `get_syllabus_topic` tool so the AI can
-  find the right chapter. Mindmap generation (ask Gemini for structured
-  JSON representing nodes/branches, then render it — could use Streamlit's
-  `graphviz_chart` or a simple custom layout). PDF upload with `pdfplumber`,
-  then a quiz flow: AI generates questions from extracted text, takes
-  answers, and scores them.
-- **Week 4**: Full testing pass across all 5 examples above. Error handling
-  for ambiguous AI responses. Documentation last.
+## Current status: COMPLETE and confirmed working end-to-end
+All of the following has been built, tested, and confirmed working:
+
+- `database.py` — timetable, assignments, exams, student profile, and
+  syllabus chapters, plus a persistent `subject_colors` table (distinct,
+  consistent color per subject). Includes a lightweight in-place migration
+  pattern (`_ensure_column`-style ALTER TABLE checks) so schema changes
+  don't break an existing local `timetable.db`.
+- `syllabus_parser.py` — splits an uploaded syllabus into chapters
+  automatically via a "Chapter N" / "Unit N" heading regex, with a
+  single-chapter fallback if no headings are found.
+- `ai_chat.py` — Gemini function-calling loop (model `gemini-3.6-flash`,
+  `MAX_STEPS`-bounded so multi-step requests like "find then delete" work
+  correctly) with tools covering timetable, assignments, exams, and
+  mindmap generation. `chat_with_ai` returns a 3-tuple
+  `(reply_text, history, mindmap_or_None)` — the mindmap generator makes
+  a SEPARATE Gemini call using structured JSON output mode
+  (`response_mime_type="application/json"`) rather than parsing free text.
+- `app.py` — three-screen flow (onboarding → tutorial → main app, gated by
+  a `student_profile.tutorial_seen` flag), a floating chat bubble pinned
+  bottom-right (via `st.container(key=...)` + CSS `position: fixed`,
+  NOT full-width — a full-width version clipped under the sidebar), a
+  Kanban board with STATIC column headers (dynamic/count-embedded headers
+  broke drag-tracking — see "known constraints" below), and Inter/
+  Instrument Serif fonts imported via Google Fonts.
+- `.streamlit/config.toml` — sets `primaryColor` under `[theme.light]` AND
+  `[theme.dark]` separately. Setting it under a single `[theme]` table
+  removes Streamlit's light/dark toggle entirely — don't do that.
+
+## Known constraints (learned the hard way — don't re-break these)
+- **Streamlit's CSS variables are unreliable in custom `st.markdown` CSS.**
+  Even with the correct `--st-` prefix, backgrounds kept resolving to
+  transparent in practice. All custom-styled backgrounds now use hardcoded
+  hex colors with a `@media (prefers-color-scheme: dark)` override instead
+  of `var(--st-*)`. If you add new custom-styled elements, follow this
+  pattern, not the CSS-variable one.
+- **The Kanban board renders in an isolated iframe** (that's how
+  `streamlit-sortables` works). It cannot see Streamlit's theme variables
+  OR the parent page's fonts/CSS at all — it needs its own `@import` for
+  fonts and its own hardcoded color + dark-mode-media-query styling,
+  passed via the component's `custom_style` parameter. It also can't sync
+  to Streamlit's manual light/dark toggle — only to the OS-level
+  `prefers-color-scheme`, which is a real limitation of the library.
+- **Kanban headers must stay static text** ("TO DO", not "TO DO (2)").
+  The component only returns whatever header text it was last given: if
+  the header changes between reruns (e.g. because a count changed), the
+  returned drag result may not match any known column and the update gets
+  silently dropped. Show live counts in a separate `st.markdown` line
+  outside the component instead.
+- **Fixed-position elements need a bounded width anchored to one side**
+  (e.g. `right: 20px`), not `left: 0; width: 100%`. A full-width fixed
+  panel overlaps/clips against Streamlit's sidebar.
+- **The sidebar hover-to-expand feature is an unsupported hack** (in
+  `render_hover_sidebar_script`) that reaches into Streamlit's internal
+  DOM via `components.html` + `window.parent.document`. It depends on
+  `data-testid` attributes that could change in a future Streamlit
+  version — if hover-expand stops working after an update, check this
+  function first before assuming something else broke.
 
 ## Conventions to follow
-- Keep the timetable as the primary, most-polished feature — it's the
-  assignment's main focus.
+- Keep the timetable as the primary, most-polished feature.
 - Every new AI capability = a new tool function in `ai_chat.py` (Gemini
-  function declaration) + a matching plain Python function in `database.py`.
-  Don't blend chat logic and database logic in the same file.
-- Test each new database function standalone (like a quick `python3 -c`
-  script) before wiring it into the AI chat loop — makes bugs much easier
-  to isolate.
-- If a chat request could need more than one tool call in sequence (find
-  then act), make sure the calling loop in `chat_with_ai` can handle
-  multiple rounds — don't assume one tool call per user message.
-- Keep it achievable for a 10th-grade skill level: avoid needlessly
-  clever/obscure Python, prefer clear function names and simple control flow.
+  `FunctionDeclaration`) + a matching plain Python function in
+  `database.py`. Don't blend chat logic and database logic in the same file.
+- Test each new database function standalone (`python3 -c "..."` script)
+  before wiring it into the AI chat loop.
+- If a chat request could need more than one tool call in sequence, make
+  sure `chat_with_ai`'s loop can handle multiple rounds.
+- Keep it achievable for a 10th-grade skill level: clear function names,
+  simple control flow, avoid clever/obscure Python.
+- See `CODE_EXPLAINED.md` for a full plain-language walkthrough before
+  making changes, if you're new to this codebase.
 
-Please review the uploaded files first, then help me continue with [tell
-Claude which week/feature you're picking up].
+Please review the uploaded files (and `CODE_EXPLAINED.md`) first, then
+help me with [describe what you need].
