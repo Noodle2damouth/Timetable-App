@@ -21,16 +21,34 @@ from ai_chat import chat_with_ai
 st.set_page_config(page_title="AI Timetable Planner", layout="wide")
 db.init_db()
 
-# ---------------- Custom styling (rounded corners, theme-aware) ----------------
-# NOTE: Streamlit's real theme variables are prefixed --st- (e.g. --st-background-color).
-# Using the un-prefixed names silently resolves to nothing (transparent) — that was the bug.
+# ---------------- Custom styling (fonts + rounded corners + theme-aware) ----------------
+# Switched away from var(--st-*) for backgrounds — it kept resolving to
+# nothing in practice regardless of the exact variable name used. Using
+# real hardcoded colors with an explicit prefers-color-scheme override is
+# more reliable, at the cost of not being pixel-perfect synced to
+# Streamlit's own manual light/dark toggle (see the Kanban board note).
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
+
+    html, body, [class*="css"], .stMarkdown, .stText, p, span, div, label, input, textarea {
+        font-family: 'Inter', sans-serif;
+    }
+    h1, h2, h3, h4, h5, h6,
+    [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stMarkdownContainer"] h3,
+    [data-testid="stHeading"] {
+        font-family: 'Instrument Serif', serif !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.01em;
+    }
+
     [data-testid="stChatMessage"] {
         border-radius: 16px;
         padding: 4px 10px;
         margin-bottom: 6px;
-        background-color: var(--st-secondary-background-color);
+        background-color: #f0f2f6;
         box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
     [data-testid="stChatInput"] textarea { border-radius: 20px !important; }
@@ -39,7 +57,7 @@ st.markdown("""
         border-radius: 16px;
         overflow: hidden;
         box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-        background-color: var(--st-secondary-background-color);
+        background-color: #ffffff;
         padding: 8px;
     }
     .fc-event {
@@ -55,36 +73,26 @@ st.markdown("""
     /* Leave room at the bottom-right so content doesn't hide behind the chat bar */
     .block-container { padding-bottom: 90px !important; }
 
-    /* Floating chat toggle button (shown when chat is closed) */
+    /* Floating chat toggle button — sized for its "💬 Chat" text label,
+       not a fixed circle (that was left over from an earlier icon-only version). */
     .st-key-chat_toggle_btn button {
         position: fixed !important;
         bottom: 20px;
         right: 20px;
-        width: 56px;
-        height: 56px;
-        border-radius: 50% !important;
-        font-size: 1.3em;
+        width: auto;
+        height: auto;
+        min-width: unset;
+        padding: 10px 20px;
+        border-radius: 24px !important;
+        font-size: 1em;
+        white-space: nowrap;
         z-index: 999999 !important;
         box-shadow: 0 2px 10px rgba(0,0,0,0.25);
     }
 
-    /* Chat panel — anchored bottom-RIGHT with a bounded width, not full-width.
-       This is what stops it from overlapping/clipping under the sidebar. */
-    .st-key-chat_panel {
-        position: fixed !important;
-        bottom: 0;
-        right: 20px;
-        left: auto;
-        width: min(420px, 92vw);
-        max-height: 70vh;
-        overflow-y: auto;
-        z-index: 999998 !important;
-        background-color: var(--st-background-color);
-        border: 1px solid var(--st-secondary-background-color);
-        box-shadow: 0 -4px 16px rgba(0,0,0,0.22);
-        padding: 10px 16px 16px 16px;
-        border-top-left-radius: 18px;
-        border-top-right-radius: 18px;
+    @media (prefers-color-scheme: dark) {
+        [data-testid="stChatMessage"] { background-color: #262730 !important; }
+        .fc { background-color: #1e1e1e !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -226,37 +234,72 @@ def render_tutorial():
         st.rerun()
 
 
+def render_mindmap_card(mindmap: dict):
+    """Renders a mindmap dict ({'central_topic', 'branches', 'subject'}) as
+    a styled nested outline. Deliberately not using Graphviz/network-style
+    rendering here — those need a system-level Graphviz install, which is
+    exactly the kind of extra setup step we've been trying to avoid."""
+    branch_colors = ["#4285F4", "#EA4335", "#34A853", "#FBBC04", "#A142F4", "#FF6D01"]
+
+    st.markdown(f"### 🧠 {mindmap.get('central_topic', 'Mindmap')}")
+    for i, branch in enumerate(mindmap.get("branches", [])):
+        color = branch_colors[i % len(branch_colors)]
+        st.markdown(
+            f"<div style='border-left:4px solid {color}; padding:6px 0 6px 14px; margin-bottom:10px;'>"
+            f"<b style='color:{color};'>{branch.get('title', '')}</b><br>"
+            + "".join(f"&nbsp;&nbsp;•&nbsp;{point}<br>" for point in branch.get("points", []))
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+
+@st.dialog("💬 Chat", width="large")
+def _chat_dialog():
+    """The actual dialog content. Only ever opened via render_persistent_chat()
+    below — never call this directly."""
+    if st.button("✕ Close", key="chat_close_btn"):
+        st.session_state.chat_open = False
+        st.rerun()
+
+    chat_box = st.container(height=400)
+    with chat_box:
+        for msg in st.session_state.display_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+                if msg.get("mindmap"):
+                    render_mindmap_card(msg["mindmap"])
+
+    user_input = st.chat_input("Tell me about your classes, or ask to change one...")
+    if user_input:
+        st.session_state.display_messages.append({"role": "user", "content": user_input})
+        reply, updated_history, mindmap = chat_with_ai(user_input, st.session_state.chat_history)
+        st.session_state.chat_history = updated_history
+        st.session_state.display_messages.append(
+            {"role": "assistant", "content": reply, "mindmap": mindmap}
+        )
+        st.rerun()  # re-opens this same dialog with the new message shown
+
+
 def render_persistent_chat():
-    """Floating chat bubble pinned to the bottom of the screen, rendered
-    outside the tabs so it stays visible no matter which tab is active."""
-    if not st.session_state.chat_open:
-        if st.button("💬", key="chat_toggle_btn"):
-            st.session_state.chat_open = True
-            st.rerun()
-        return
+    """
+    Chat access point, rendered outside the tabs so it's available no
+    matter which tab is active.
 
-    with st.container(key="chat_panel"):
-        col_title, col_close = st.columns([6, 1])
-        with col_title:
-            st.markdown("**💬 Chat**")
-        with col_close:
-            if st.button("✕", key="chat_close_btn"):
-                st.session_state.chat_open = False
-                st.rerun()
+    NOTE: this used to be a custom floating panel built from a keyed
+    st.container + CSS position:fixed. After three separate rounds of
+    that panel rendering transparent/clipped in ways that couldn't be
+    reliably diagnosed without visual access to the running app, this
+    was switched to Streamlit's own built-in st.dialog instead — a
+    proper native modal with a guaranteed solid background, rather than
+    a hand-built one fighting Streamlit's internal layout. The visible
+    trade-off: it now opens as a centered pop-up rather than a
+    bottom-right bubble.
+    """
+    if st.button("💬 Chat", key="chat_toggle_btn"):
+        st.session_state.chat_open = True
 
-        chat_box = st.container(height=280)
-        with chat_box:
-            for msg in st.session_state.display_messages:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-
-        user_input = st.chat_input("Tell me about your classes, or ask to change one...")
-        if user_input:
-            st.session_state.display_messages.append({"role": "user", "content": user_input})
-            reply, updated_history = chat_with_ai(user_input, st.session_state.chat_history)
-            st.session_state.chat_history = updated_history
-            st.session_state.display_messages.append({"role": "assistant", "content": reply})
-            st.rerun()
+    if st.session_state.chat_open:
+        _chat_dialog()
 
 
 # ==================== SCREEN 3: Main app ====================
@@ -353,7 +396,7 @@ def render_main_app():
 
     st.title("AI Timetable Planner")
 
-    tab_timetable, tab_kanban = st.tabs(["Timetable", "Kanban board"])
+    tab_timetable, tab_kanban, tab_todo = st.tabs(["Timetable", "Kanban board", "To-Do List"])
 
     with tab_timetable:
         st.subheader("Your timetable")
@@ -391,6 +434,9 @@ def render_main_app():
     with tab_kanban:
         render_kanban_tab()
 
+    with tab_todo:
+        render_todo_tab()
+
     render_persistent_chat()
 
 def _format_date_display(iso_date: str) -> str:
@@ -406,15 +452,38 @@ def _format_date_display(iso_date: str) -> str:
         return iso_date
 
 
+# Colored circle emoji, index-aligned with database.SUBJECT_COLORS as
+# closely as possible. This is the best available stand-in for a subject's
+# real hex color INSIDE the Kanban board specifically — that component
+# only accepts plain text for its cards (no HTML/CSS per item is
+# possible), so a real colored border like the Timetable/To-Do List use
+# genuinely can't be done there. Everywhere else in the app uses the real
+# hex color from db.get_subject_color().
+SUBJECT_DOTS = ["🔵", "🔴", "🟢", "🟡", "🟣", "🟠", "🟤", "⚫", "⚪", "🔵"]
+
+
+def _subject_dot(subject: str) -> str:
+    if not subject:
+        return ""
+    color = db.get_subject_color(subject)
+    try:
+        idx = db.SUBJECT_COLORS.index(color)
+    except ValueError:
+        idx = 0
+    return SUBJECT_DOTS[idx % len(SUBJECT_DOTS)]
+
+
 KANBAN_CARD_STYLE = """
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 /* This board renders inside an isolated iframe, which CANNOT see
-   Streamlit's theme variables at all (that's a hard cross-iframe
-   limitation, not a naming mistake). So these are real hardcoded colors,
-   with a prefers-color-scheme fallback for OS-level dark mode.
-   Note: this won't perfectly sync with Streamlit's own light/dark toggle
-   specifically (that state isn't exposed to the iframe) — it follows your
-   operating system's dark mode setting instead, which matches for most
-   people most of the time. */
+   Streamlit's theme variables OR the parent page's fonts at all (a hard
+   cross-iframe limitation) — hence the separate font import and hardcoded
+   colors here instead of reusing the main page's styling.
+   Column headers stay in Inter rather than the site's Instrument Serif
+   heading font — at this small, bold, all-caps size a display serif
+   loses legibility, so Inter reads better here even though it's a label,
+   not body text. */
 .sortable-component {
     background: transparent !important;
 }
@@ -426,6 +495,7 @@ KANBAN_CARD_STYLE = """
 }
 .sortable-container-header {
     color: #202124 !important;
+    font-family: 'Inter', sans-serif !important;
     font-weight: 700 !important;
     font-size: 0.85em !important;
     letter-spacing: 0.04em !important;
@@ -437,6 +507,7 @@ KANBAN_CARD_STYLE = """
 .sortable-item {
     background: #ffffff !important;
     color: #202124 !important;
+    font-family: 'Inter', sans-serif !important;
     border-left: 4px solid #4285F4 !important;
     border-radius: 10px !important;
     padding: 12px 14px !important;
@@ -465,9 +536,10 @@ def render_kanban_tab():
     assignments = db.find_assignments(include_completed=True)
 
     def _label(a):
+        dot = f"{_subject_dot(a['subject'])} " if a['subject'] else ""
         subj = f"\n{a['subject']}" if a['subject'] else ""
         due = f"\nDue {_format_date_display(a['due_date'])}" if a['due_date'] else ""
-        return f"{a['title']}{subj}{due}"
+        return f"{dot}{a['title']}{subj}{due}"
 
     not_started = [_label(a) for a in assignments if a["progress"] == 0]
     in_progress = [_label(a) for a in assignments if 0 < a["progress"] < 100]
@@ -528,6 +600,72 @@ def render_kanban_tab():
                 due_str = new_due.strftime("%Y-%m-%d") if new_due else ""
                 db.add_assignment(new_title, new_subject, due_str)
                 st.rerun()
+
+    with st.expander("Remove a task"):
+        if not assignments:
+            st.caption("No tasks yet.")
+        for a in assignments:
+            col_info, col_delete = st.columns([5, 1])
+            with col_info:
+                dot = f"{_subject_dot(a['subject'])} " if a['subject'] else ""
+                subj = f" ({a['subject']})" if a['subject'] else ""
+                st.write(f"{dot}{a['title']}{subj}")
+            with col_delete:
+                if st.button("🗑️ Remove", key=f"kanban_delete_{a['id']}"):
+                    db.delete_assignment(a['id'])
+                    st.rerun()
+
+
+def render_todo_tab():
+    """A simple checklist view of the SAME assignments table the Kanban
+    board uses — checking/unchecking a task here changes its progress in
+    the database, so the Kanban board reflects it immediately too, and
+    vice versa. Unlike the Kanban board, this is rendered directly by
+    Streamlit (not inside an isolated iframe), so it CAN use each
+    subject's real hex color, matching the Timetable exactly."""
+    st.subheader("To-Do List")
+    st.caption("Synced with your Kanban board — checking a task off marks it done everywhere. "
+               "Unchecking resets it to not-started (the in-between 'in progress' state is "
+               "Kanban-only, since a checkbox is just on/off).")
+
+    assignments = db.find_assignments(include_completed=True)
+    assignments_sorted = sorted(assignments, key=lambda a: a["due_date"] or "9999-99-99")
+
+    if not assignments_sorted:
+        st.caption("No tasks yet — add one from the Kanban board tab.")
+        return
+
+    for a in assignments_sorted:
+        color = db.get_subject_color(a["subject"]) if a["subject"] else "#9aa0a6"
+        col_check, col_info, col_delete = st.columns([0.6, 5, 1])
+
+        with col_check:
+            is_done = st.checkbox(
+                "", value=(a["progress"] == 100), key=f"todo_check_{a['id']}",
+                label_visibility="collapsed",
+            )
+
+        with col_info:
+            subj = f" &nbsp;·&nbsp; {a['subject']}" if a["subject"] else ""
+            due = f" &nbsp;·&nbsp; Due {_format_date_display(a['due_date'])}" if a["due_date"] else ""
+            title_style = "text-decoration: line-through; opacity: 0.6;" if a["progress"] == 100 else ""
+            st.markdown(
+                f"<div style='border-left:4px solid {color}; padding:2px 0 2px 12px;'>"
+                f"<span style='{title_style}'><b>{a['title']}</b></span>{subj}{due}</div>",
+                unsafe_allow_html=True,
+            )
+
+        with col_delete:
+            if st.button("🗑️", key=f"todo_delete_{a['id']}"):
+                db.delete_assignment(a["id"])
+                st.rerun()
+
+        if is_done and a["progress"] != 100:
+            db.update_assignment_progress(a["id"], 100)
+            st.rerun()
+        elif not is_done and a["progress"] == 100:
+            db.update_assignment_progress(a["id"], 0)
+            st.rerun()
 
 
 # ==================== Router ====================

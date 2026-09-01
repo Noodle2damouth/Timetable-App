@@ -266,6 +266,19 @@ def update_assignment_progress(assignment_id, progress):
         return cur.rowcount > 0
 
 
+def delete_assignment(assignment_id):
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+        return cur.rowcount > 0
+
+
+def get_subject_color(subject):
+    """Public lookup for a subject's assigned color — used anywhere in the
+    app (Kanban, To-Do List) that needs to match the Timetable's colors.
+    Assigns a new color on first use, same as timetable events do."""
+    return _color_for_subject(subject)
+
+
 def get_due_now(reference_date):
     """Assignments due on or before the given date ('YYYY-MM-DD') that
     aren't finished yet — used for 'what's due right now' style queries."""
