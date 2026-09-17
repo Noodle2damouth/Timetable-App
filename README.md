@@ -1,5 +1,10 @@
 # AI Timetable Planner — Project complete (Weeks 1-3)
 
+## Demo Video
+
+https://github.com/user-attachments/assets/b75bef71-1e7a-41fc-a7d5-ddfaa1ab35d0
+
+
 ## What's in this folder
 - `database.py` — SQLite storage: timetable events, assignments, exams,
   student profile, syllabus chapters, and a persistent color-per-subject
